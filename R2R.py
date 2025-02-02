@@ -762,6 +762,18 @@ def parse_scantitle(scan_title):
     return scan_elements
         
 
+def isXRR_from_scantitle(scan_title):
+    scan_elements = parse_scantitle(scan_title)
+    if scan_elements["type"] == "a2scan":
+        return scan_elements["bg1_start"]*2 == scan_elements["psi_start"] and scan_elements["bg1_end"]*2 == scan_elements["psi_end"]
+    
+def isBG_from_scantitle(scan_title):
+    scan_elements = parse_scantitle(scan_title)
+    if scan_elements["type"] == "a2scan":
+        return scan_elements["bg1_start"]*2 != scan_elements["psi_start"] and scan_elements["bg1_end"]*2 != scan_elements["psi_end"]:
+    
+    
+    
 def dict_scan(h5File_list, verbose = False):
     list_dictScan=[]
     item = 0
@@ -777,35 +789,28 @@ def dict_scan(h5File_list, verbose = False):
                 #the type of s['title'][()] is bytes
                 
                 #check if it is a XRR scan
-                scan_elements = parse_scantitle(scan_title)
-                if verbose : print(scan_elements)
-                if scan_elements["type"] == "a2scan":
-                    if scan_elements["bg1_start"]*2 == scan_elements["psi_start"] and scan_elements["bg1_end"]*2 == scan_elements["psi_end"]:
-                        if verbose : print("found xrr", scan_num)
-                        list_dictScan.append(dictScan)
-                        dictScan['item'] = item
-                        item=item+1
-                        dictScan['h5filePath']=h5filePath
-                        dictScan['sampleName']=os.path.split(h5filePath)[1][:-3]
-                        dictScan['title']=s['title'][()]
-                        dictScan['scanNbrXRR']=int(scan_num.split('.')[0])
-                        
-                        #check if it has a following background (BG) scan
-                        #if the type of f[f'{scan_numBG}.1']['title'][()] is bytes
-                        scanBG_num=int(scan_num.split('.')[0])+1
-                        scanBG_title = f[f'{scanBG_num}.1']['title'][()].decode()
-                        scanBG_elements = parse_scantitle(scanBG_title)
-                        print("BG",scanBG_num, scanBG_title, scanBG_elements)#, scanBG_elements["bg1_start"]*2, scanBG_elements["psi_start"], scanBG_elements["bg1_end"]*2, scanBG_elements["psi_end"], \
-                            #scanBG_elements["bg1_start"]*2 != scanBG_elements["psi_start"] or scanBG_elements["bg1_end"]*2 != scanBG_elements["psi_end"])
-                        if scanBG_elements["type"] == "a2scan":
-                            if scanBG_elements["bg1_start"]*2 != scanBG_elements["psi_start"] or scanBG_elements["bg1_end"]*2 != scanBG_elements["psi_end"]:
-                                if verbose : print("found xrr BG")
-                                dictScan['scanNbrBG']=scanBG_num
-                                dictScan['title_BG']=f[f'{scanBG_num}.1']['title'][()]
-                            else:
-                                dictScan['scanNbrBG']= None
-                        else:
-                            dictScan['scanNbrBG']= None
+                if isXRR_from_scantitle(scan_title)
+                    if verbose : print("found xrr", scan_num)
+                    list_dictScan.append(dictScan)
+                    dictScan['item'] = item
+                    item=item+1
+                    dictScan['h5filePath']=h5filePath
+                    dictScan['sampleName']=os.path.split(h5filePath)[1][:-3]
+                    dictScan['title']=s['title'][()]
+                    dictScan['scanNbrXRR']=int(scan_num.split('.')[0])
+
+                    #check if it has a following background (BG) scan
+                    #if the type of f[f'{scan_numBG}.1']['title'][()] is bytes
+                    scanBG_num=int(scan_num.split('.')[0])+1
+                    scanBG_title = f[f'{scanBG_num}.1']['title'][()].decode()
+                    if isBG_from_scantitle(scanBG_title)
+                       if verbose : print("found xrr BG")
+                        dictScan['scanNbrBG']=scanBG_num
+                        dictScan['title_BG']=f[f'{scanBG_num}.1']['title'][()]
+                    else:
+                        dictScan['scanNbrBG']= None
+                    else:
+                        dictScan['scanNbrBG']= None
     return list_dictScan
 
 
