@@ -24,7 +24,7 @@ class Sample():
                  zrange=100, qmax=None,
                  tthmin=0.05, tthmin_bg=0.1,
                  qvaluesRangesToRemove = [],peak_distance=None,peak_prominence=None,
-                 baseline_type="spline"):
+                 baseline_type="pchip"):
         self.sampleName = sampleName
         self.datafilePathXRR = datafilePathXRR
         ##test
@@ -217,7 +217,7 @@ class Sample():
                 baseline_func = interp1d(np.insert(self.q[self.minima],0,0), 
                                          np.insert(smoothed_y[self.minima],0,0),
                                          kind='linear', bounds_error=False, fill_value='extrapolate')
-        elif self.baseline_type == "spline":
+        elif self.baseline_type == "spline" and len(self.minima) >= 5:
             baseline_func = make_smoothing_spline(np.insert(self.q[self.minima],0,0), 
                                                   np.insert(smoothed_y[self.minima],0,0))
             
@@ -226,7 +226,7 @@ class Sample():
         
         
         # Evaluate the baseline function over the entire q range
-        if self.baseline_type == "spline":
+        if self.baseline_type == "pchip":
             baseline_values = pchip_interpolate(np.insert(self.q[self.minima],0,0), 
                                             np.insert(smoothed_y[self.minima],0,0), 
                                             self.q)
@@ -393,8 +393,12 @@ class Sample():
             #mon = f[f"{scanNbr}.1/measurement/mon4"][()]
             #integrationTime = f[f"{scanNbr}.1/measurement/integration_time"][()]
             tth = self.dict_counter['psi']
-            det = self.dict_counter['detcor']
             mon = self.dict_counter['mon4']
+            
+            # check the attenuation coefficients
+            #self.energy = f[k]['instrument/positioners/energy'][()]
+            
+            det = self.dict_counter['detcor']
             self.start_time_str = f[f"{scanNbr}.1/start_time"][()]
             self.start_time = datetime.datetime.fromisoformat(self.start_time_str.decode()) 
             self.end_time_str = f[f"{scanNbr}.1/end_time"][()]
@@ -404,7 +408,7 @@ class Sample():
             except KeyError:
                 s=f[f"{scanNbr}.1"]
                 scan_title = str(s['title'][()])
-                print(scan_title.split())
+                #print(scan_title.split())
                 try:
                     integrationTime = float(scan_title.split()[-1])*np.ones_like(tth)
                 except ValueError:
@@ -773,37 +777,50 @@ def isBG_from_scantitle(scan_title):
         return scan_elements["bg1_start"]*2 != scan_elements["psi_start"] and scan_elements["bg1_end"]*2 != scan_elements["psi_end"]
     
     
-def build_dictScan_from_master_h5(h5file, filters = ["measurement"], verbose=False):
+def build_dictScan_from_master_h5(h5FileExp, filters = ["measurement",], verbose=False):
     list_dictScan=[]
     item = 0
     with silx.io.h5py_utils.File(h5FileExp,'r') as f:
-    keys = f.keys()
-    for k in keys:
-        if "measurement" in k:
-            s=f[k]
-            scan_title = s['title'][()].decode()
-            if verbose : print(scan_title)
-            #check if it is a XRR scan
-            if isXRR_from_scantitle(scan_title)
-                if verbose : print("found xrr", scan_num)
-                list_dictScan.append(dictScan)
-                dictScan['item'] = item
-                item=item+1
-                dictScan['h5filePath']=f[k].file.filename
-                dictScan['sampleName']=os.path.split(os.path.split(os.path.split(dictScan['h5filePath'])[0])[0])[1]
-                dictScan['title']=s['title'][()]
-                dictScan['scanNbrXRR']=int(scan_num.split('.')[0])
+        keys = f.keys()
+        for k in keys:
+            do_process = False
+            for keyword in filters:
+                if keyword in k:
+                    do_process = True
+                    break
+            if do_process:
+                if verbose: print("process ", k)
+                s=f[k]
+                scan_title = s['title'][()].decode()
+                if verbose : print(scan_title)
+                #check if it is a XRR scan
+                if isXRR_from_scantitle(scan_title):
+                    prefix = "_".join(k.split("_")[:-1])
+                    scan_num = k.split("_")[-1].split(".")[0]
+                    if verbose : print("found xrr", prefix, scan_num)
+                    dictScan={}
+                    list_dictScan.append(dictScan)
+                    dictScan['item'] = item
+                    item=item+1
+                    dictScan['h5filePath']=f[k].file.filename
+                    dictScan['sampleName']=os.path.split(os.path.split(os.path.split(dictScan['h5filePath'])[0])[0])[1]
+                    dictScan['title']=s['title'][()]
+                    dictScan['scanNbrXRR']=int(scan_num.split('.')[0])
 
-                #check if it has a following background (BG) scan
-                #if the type of f[f'{scan_numBG}.1']['title'][()] is bytes
-                scanBG_num=int(scan_num.split('.')[0])+1
-                scanBG_title = f[f'{scanBG_num}.1']['title'][()].decode()
-                if isBG_from_scantitle(scanBG_title)
-                   if verbose : print("found xrr BG")
-                    dictScan['scanNbrBG']=scanBG_num
-                    dictScan['title_BG']=f[f'{scanBG_num}.1']['title'][()]
-                else:
+                    #check if it has a following background (BG) scan
+                    #if the type of f[f'{scan_numBG}.1']['title'][()] is bytes
                     dictScan['scanNbrBG']= None
+                    scanBG_num=int(scan_num)+1
+                    k_bg = f"{prefix}_{scanBG_num}.1"
+                    if k_bg in keys:
+                        if verbose: print("bg name ", k_bg)
+                        scanBG_title = f[k_bg]['title'][()].decode()
+                        if verbose: print("scanBG_title ", scanBG_title)
+                        if isBG_from_scantitle(scanBG_title):
+                            if verbose : print("found xrr BG")
+                            dictScan['scanNbrBG']=scanBG_num
+                            dictScan['title_BG']=scanBG_title
+                        
     return list_dictScan
 
 
@@ -824,7 +841,7 @@ def dict_scan(h5File_list, verbose = False):
                 #the type of s['title'][()] is bytes
                 
                 #check if it is a XRR scan
-                if isXRR_from_scantitle(scan_title)
+                if isXRR_from_scantitle(scan_title):
                     if verbose : print("found xrr", scan_num)
                     list_dictScan.append(dictScan)
                     dictScan['item'] = item
@@ -838,8 +855,8 @@ def dict_scan(h5File_list, verbose = False):
                     #if the type of f[f'{scan_numBG}.1']['title'][()] is bytes
                     scanBG_num=int(scan_num.split('.')[0])+1
                     scanBG_title = f[f'{scanBG_num}.1']['title'][()].decode()
-                    if isBG_from_scantitle(scanBG_title)
-                       if verbose : print("found xrr BG")
+                    if isBG_from_scantitle(scanBG_title):
+                        if verbose : print("found xrr BG")
                         dictScan['scanNbrBG']=scanBG_num
                         dictScan['title_BG']=f[f'{scanBG_num}.1']['title'][()]
                     else:
