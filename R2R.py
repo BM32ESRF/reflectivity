@@ -770,10 +770,45 @@ def isXRR_from_scantitle(scan_title):
 def isBG_from_scantitle(scan_title):
     scan_elements = parse_scantitle(scan_title)
     if scan_elements["type"] == "a2scan":
-        return scan_elements["bg1_start"]*2 != scan_elements["psi_start"] and scan_elements["bg1_end"]*2 != scan_elements["psi_end"]:
+        return scan_elements["bg1_start"]*2 != scan_elements["psi_start"] and scan_elements["bg1_end"]*2 != scan_elements["psi_end"]
     
     
-    
+def build_dictScan_from_master_h5(h5file, filters = ["measurement"], verbose=False):
+    list_dictScan=[]
+    item = 0
+    with silx.io.h5py_utils.File(h5FileExp,'r') as f:
+    keys = f.keys()
+    for k in keys:
+        if "measurement" in k:
+            s=f[k]
+            scan_title = s['title'][()].decode()
+            if verbose : print(scan_title)
+            #check if it is a XRR scan
+            if isXRR_from_scantitle(scan_title)
+                if verbose : print("found xrr", scan_num)
+                list_dictScan.append(dictScan)
+                dictScan['item'] = item
+                item=item+1
+                dictScan['h5filePath']=f[k].file.filename
+                dictScan['sampleName']=os.path.split(os.path.split(os.path.split(dictScan['h5filePath'])[0])[0])[1]
+                dictScan['title']=s['title'][()]
+                dictScan['scanNbrXRR']=int(scan_num.split('.')[0])
+
+                #check if it has a following background (BG) scan
+                #if the type of f[f'{scan_numBG}.1']['title'][()] is bytes
+                scanBG_num=int(scan_num.split('.')[0])+1
+                scanBG_title = f[f'{scanBG_num}.1']['title'][()].decode()
+                if isBG_from_scantitle(scanBG_title)
+                   if verbose : print("found xrr BG")
+                    dictScan['scanNbrBG']=scanBG_num
+                    dictScan['title_BG']=f[f'{scanBG_num}.1']['title'][()]
+                else:
+                    dictScan['scanNbrBG']= None
+    return list_dictScan
+
+
+
+            
 def dict_scan(h5File_list, verbose = False):
     list_dictScan=[]
     item = 0
@@ -807,8 +842,6 @@ def dict_scan(h5File_list, verbose = False):
                        if verbose : print("found xrr BG")
                         dictScan['scanNbrBG']=scanBG_num
                         dictScan['title_BG']=f[f'{scanBG_num}.1']['title'][()]
-                    else:
-                        dictScan['scanNbrBG']= None
                     else:
                         dictScan['scanNbrBG']= None
     return list_dictScan
