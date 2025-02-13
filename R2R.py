@@ -57,6 +57,12 @@ class Sample():
             self.datafilePathBG = datafilePathXRR
         else:
             self.datafilePathBG = datafilePathBG
+
+        # Valeur des coeff d’attenuation pour Cu : attnfactlist[i] donne la valeur de i attenuateurs
+        self.attnFactors27keV = np.array([1.00000000e+00, 2.66000000e+00, 7.02000000e+00, 1.86732000e+01,
+                                          4.92000000e+01, 1.30872000e+02, 3.45384000e+02, 9.18721440e+02,
+                                          2.42000000e+03, 6.43720000e+03, 1.69884000e+04, 4.51891440e+04,
+                                          1.19064000e+05, 3.16710240e+05, 8.35829280e+05, 2.22330588e+06])
         
     def process(self):
         # read the data to set the values for:
@@ -401,9 +407,11 @@ class Sample():
             mon = self.dict_counter['mon4']
             
             # check the attenuation coefficients
-            #self.energy = f[k]['instrument/positioners/energy'][()]
+            self.energy = f['instrument/positioners/energy'][()]
             
-            det = self.dict_counter['detcor']
+            if abs(self.energy-27)>0.010:
+                raise ValueError("Energies different than 27 keV are not supported yet")
+            det = self.dict_counter['det']*self.attnFactors27keV[int(self.dict_counter['attn'])]
             self.start_time_str = f[f"{scanNbr}.1/start_time"][()]
             self.start_time = datetime.datetime.fromisoformat(self.start_time_str.decode()) 
             self.end_time_str = f[f"{scanNbr}.1/end_time"][()]
@@ -421,8 +429,9 @@ class Sample():
         return tth, det, mon, integrationTime
 
     def ensure_broadcast(self,h5filePath, scanNbr):
+        #TODO : refactor such that reading and 0-padding are separated, and make 0-pad more general
         self.dict_counter= {} 
-        with h5.File(h5filePath,'r') as f:
+        with silx.io.h5py_utils.File(h5filePath, 'r') as f:
             counters = list(f[f"{scanNbr}.1/measurement"].keys())
             counters_len = [len(f[f"{scanNbr}.1/measurement/{counter}"][()]) for counter in counters]
             counters_len.sort()
