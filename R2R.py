@@ -788,11 +788,7 @@ def build_dictScan_from_master_h5(h5FileExp, filters = ["measurement",], verbose
     with silx.io.h5py_utils.File(h5FileExp,'r') as f:
         keys = f.keys()
         for k in keys:
-            do_process = False
-            for keyword in filters:
-                if keyword in k:
-                    do_process = True
-                    break
+            do_process = np.array([(keyword in k) for keyword in filters]).all()
             if do_process:
                 if verbose: print("process ", k)
                 s=f[k]
