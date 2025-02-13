@@ -23,7 +23,7 @@ except ImportError:
 
 class Sample():
     def __init__(self, sampleName, datafilePathXRR, scanNbrXRR, 
-                 datafilePathBG=None, scanNbrBG=None, sampleLength=4, darkCurrent=0, 
+                 datafilePathBG=None, scanNbrBG=None, BG_subrange=None, sampleLength=4, darkCurrent=0, 
                  directBeamFHWM = 0.0033, wavelength = 12398/27000,
                  directBeamAmplitude=None, beamSize=0.05, tthOffset=0,
                  zrange=100, qmax=None,
@@ -48,6 +48,7 @@ class Sample():
         self.qmax = qmax
         self.tthmin = tthmin
         self.tthmin_bg = tthmin_bg
+        self.BG_subrange = BG_subrange
         self.max_idx = None
         self.peaks = [] 
         self.minima = []
@@ -294,9 +295,24 @@ class Sample():
     def get_rawdata(self):
         # read the signal XRR
         if self.datafilePathXRR.endswith(".h5"):
-            self.tth, self.det, self.mon, self.integrationTime = self.read_h5(self.datafilePathXRR, self.scanNbrXRR)
+            self.tth, self.det, self.mon, self.integrationTime, self.start_time_str, self.end_time_str = self.read_h5(self.datafilePathXRR, self.scanNbrXRR)
             if self.scanNbrBG != None:  
-                self.tth_bg, self.det_bg, self.mon_bg, self.integrationTime_bg = self.read_h5(self.datafilePathBG,self.scanNbrBG)
+                self.tth_bg, self.det_bg, self.mon_bg, self.integrationTime_bg, self.start_time_str_bg, self.end_time_str_bg = self.read_h5(self.datafilePathBG,self.scanNbrBG)
+                if self.BG_subrange != None and len(self.BG_subrange) == 2:
+                    # select a subset of the background (e.g. the last few points) 
+                    m, M = self.BG_subrange[0],self.BG_subrange[1]
+                    self.tth_bg_sub = self.tth_bg[m:M]
+                    self.det_bg_sub = self.det_bg[m:M]
+                    self.mon_bg_sub = self.mon_bg[m:M]
+                    self.integrationTime_bg_sub = self.integrationTime_bg[m:M]
+                    # and reinterpolate over the whole range
+                    x = self.tth
+                    x_bg_sub = self.tth_bg_sub
+                    self.tth_bg = interp1d(x_bg_sub, self.tth_bg_sub, kind='linear', bounds_error=False, fill_value='extrapolate')(x)
+                    self.det_bg = interp1d(x_bg_sub, self.det_bg_sub, kind='linear', bounds_error=False, fill_value=(self.det_bg_sub[0],self.det_bg_sub[-1]))(x)
+                    self.mon_bg = interp1d(x_bg_sub, self.mon_bg_sub, kind='linear', bounds_error=False, fill_value=(self.mon_bg_sub[0],self.mon_bg_sub[-1]))(x)
+                    self.integrationTime_bg = interp1d(x_bg_sub, self.integrationTime_bg_sub, kind='linear', bounds_error=False, fill_value='extrapolate')(x)
+
             else:
                 self.set_no_background()
         
@@ -405,17 +421,18 @@ class Sample():
             #integrationTime = f[f"{scanNbr}.1/measurement/integration_time"][()]
             tth = self.dict_counter['psi']
             mon = self.dict_counter['mon4']
+            attn = self.dict_counter['attn'].astype(int)
             
             # check the attenuation coefficients
-            self.energy = f['instrument/positioners/energy'][()]
+            self.energy = f[f'{scanNbr}.1/instrument/positioners/energy'][()]
             
             if abs(self.energy-27)>0.010:
                 raise ValueError("Energies different than 27 keV are not supported yet")
-            det = self.dict_counter['det']*self.attnFactors27keV[int(self.dict_counter['attn'])]
-            self.start_time_str = f[f"{scanNbr}.1/start_time"][()]
-            self.start_time = datetime.datetime.fromisoformat(self.start_time_str.decode()) 
-            self.end_time_str = f[f"{scanNbr}.1/end_time"][()]
-            self.end_time = datetime.datetime.fromisoformat(self.end_time_str.decode()) 
+            det = self.dict_counter['det']*self.attnFactors27keV[attn]
+            start_time_str = f[f"{scanNbr}.1/start_time"][()]
+            #self.start_time = datetime.datetime.fromisoformat(self.start_time_str.decode()) 
+            end_time_str = f[f"{scanNbr}.1/end_time"][()]
+            #self.end_time = datetime.datetime.fromisoformat(self.end_time_str.decode()) 
             try:
                 integrationTime = self.dict_counter['integration_time']
             except KeyError:
@@ -426,7 +443,7 @@ class Sample():
                     integrationTime = float(scan_title.split()[-1])*np.ones_like(tth)
                 except ValueError:
                     integrationTime = float(scan_title.split()[-1][:-1])*np.ones_like(tth)
-        return tth, det, mon, integrationTime
+        return tth, det, mon, integrationTime, start_time_str, end_time_str
 
     def ensure_broadcast(self,h5filePath, scanNbr):
         #TODO : refactor such that reading and 0-padding are separated, and make 0-pad more general
