@@ -3,7 +3,12 @@ import matplotlib.pylab as plt
 import h5py as h5
 import silx.io.h5py_utils
 from lmfit.models import RectangleModel, GaussianModel, QuadraticModel
-from scipy.interpolate import interp1d, make_smoothing_spline, pchip_interpolate
+from scipy.interpolate import interp1d, pchip_interpolate
+try:
+    from scipy.interpolate import make_smoothing_spline
+except ImportError:
+    pass
+
 from scipy.signal import find_peaks,savgol_filter
 from numpy import rad2deg as deg
 from numpy import deg2rad as rad
