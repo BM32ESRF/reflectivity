@@ -356,7 +356,7 @@ class Sample():
         self.detmnp_bg = self.detmn_bg/self.fpc_bg
         self.imin_bg,self.imax_bg = np.where(self.tthc_bg>self.tthmin_bg)[0].min(),-1
         self.tthcr_bg, self.detmnpr_bg = self.tthc_bg[self.imin_bg:self.imax_bg], self.detmnp_bg[self.imin_bg:self.imax_bg]
-        self.detmnpri_bg = interp1d(self.tthcr_bg, self.detmnpr_bg, fill_value="extrapolate")(self.tthcr)
+        self.detmnpri_bg = interp1d(self.tthcr_bg, self.detmnpr_bg, kind='linear', bounds_error=False,  fill_value=(self.detmnpr_bg[0],self.detmnpr_bg[-1]))(self.tthcr)
 
         self.qraw = self.tth2q(self.tthcr, wavelength=self.wavelength)
         self.Rraw = self.detmnpr - self.detmnpri_bg
