@@ -779,6 +779,123 @@ class Sample():
         plt.show()
 
 
+    def save_plot_analysis(self, filename, figsize = (11,8), dpi = 150,
+                           qmin = 0, qmax = 0.9, 
+                           q4Rmin = -1E-9, q4Rmax = 5E-8, 
+                           sqrtq4Rmin = -0.00015, sqrtq4Rmax = 0.00025, 
+                           zmin = -40, zmax = 40, 
+                           rhomin = -.5, rhomax = 0.03):
+        plt.ioff()
+        fig,axs = plt.subplots(3, 3, figsize=figsize)
+        #figure 1 
+        ax=axs[0,0]
+        ax.plot(self.tth, self.det, label=("XRR"))
+        ax.plot(self.tth_bg, self.det_bg, label=("BG"))
+        ax.set_yscale('log')
+        ax.set_xlabel("tth (deg)", fontsize="small")
+        ax.set_ylabel("det (arb. unit)", fontsize="small")
+        ax.set_title("fig.1: raw data", fontsize="small")
+        
+        #figure 2 
+        ax=axs[1,0]
+        ax.plot(self.tth, self.detm, label=("XRR"))
+        ax.plot(self.tth_bg, self.detm_bg, label=("BG"))
+        ax.set_yscale('log')
+        ax.set_xlabel("tth (deg)", fontsize="small")
+        ax.set_ylabel("det/mon (arb. unit)", fontsize="small")
+        ax.set_title("fig.2: normalized to monitor", fontsize="small")
+        
+        #figure 3
+        ax=axs[2,0]
+        ax.plot(self.tthc, self.detmn, label=("XRR"))
+        ax.plot(self.tthc_bg, self.detmn_bg, label=("BG"))
+        ax.set_yscale('log')
+        ax.set_xlabel("tth (deg)", fontsize="small")
+        ax.set_ylabel("det/mon/db (arb. unit)", fontsize="small")
+        ax.set_title("fig.3: normalized to direct beam", fontsize="small")
+        
+        #figure 4 
+        ax=axs[0,1]
+        ax.plot(self.tthc, self.detmn, label=("XRR-no fc"))
+        ax.plot(self.tthc, self.detmnp, label=("XRR"))
+        ax.plot(self.tthc_bg, self.detmnp_bg, label=("BG"))
+        ax.set_yscale('log')
+        ax.set_xlabel("tth (deg)", fontsize="small")
+        ax.set_ylabel("det/mon/db/fpc (arb. unit)", fontsize="small")
+        ax.plot(self.tthcr, self.detmnpr, label=("XRR (out of db)"))
+        ax.plot(self.tthcr_bg, self.detmnpr_bg, label=("BG (out of db)"))
+        ax.plot(self.tthcr, self.detmnpri_bg, label=("BG (out of db) interp."))
+        ax2 = ax.twinx()
+        ax2.plot(self.tthc,self.fpc,'k:', label="footprint correction")
+        ax2.set_ylabel("footprint correction", fontsize="small")
+        ax.set_title("fig.4: normalized to db + footprint correction + bg interp", fontsize="small")
+
+        #figure 5
+        ax=axs[1,1]
+        ax.plot(self.q, self.R, label=("R"))
+        ax.plot(self.qc, self.Rc, label=("R>0"))
+        ax.set_xlim(qmin,qmax)
+        ax.set_yscale('log')
+        ax.set_xlabel("q (A-1)", fontsize="small")
+        ax.set_ylabel("R ", fontsize="small")
+        ax.set_title("fig.5: R(q)", fontsize="small")
+
+        #figure 6
+        ax=axs[2,1]
+        ax.plot(self.qraw, self.Rraw*(self.qraw**4), label=("raw"))
+        ax.plot(self.qc, self.Rc*(self.qc**4), label=("R>0"))
+        ax.set_xlim(qmin,qmax)
+        ax.set_xlabel("q (A-1)", fontsize="small")
+        ax.set_ylabel("q4R ", fontsize="small")
+        ax.set_title("fig.6: q4R(q) (raw)", fontsize="small")
+
+        #figure 7
+        ax=axs[0,2]
+        ax.plot(self.qc, self.Rc*(self.qc**4),'k', label=("q4R (R>0)"))
+        ax.plot(self.q,self.Rq4_bl,'b',label=("bl"))
+        ax.plot(self.q,self.smoothed_Rq4_bl,'r',label=("bl+s"))
+        ax.plot(self.q[self.minima],self.smoothed_Rq4[self.minima],'ko', markersize=4,label=("minima"))
+        ax.plot(self.q,self.baseline,'ko-', markersize=1,lw=1,label=("baseline"))
+        ax.set_xlim(qmin,qmax)
+        ax.set_ylim(q4Rmin,q4Rmax)
+        ax.set_xlabel("q (A-1)", fontsize="small")
+        ax.set_ylabel("q4R ", fontsize="small")
+        ax.set_title("fig.7: q4R(q)", fontsize="small")
+
+        #figure 8
+        ax=axs[1,2]
+        ax.plot(self.q, np.sqrt(self.R*self.q**4), 'k',label=("nc"))
+        ax.plot(self.q,self.sqrtRq4,'b',label=("ph."))
+        ax.plot(self.q,self.sqrt_smoothed_Rq4_bl,'r',label=("ph.+bl"))
+        ax.set_xlim(qmin,qmax)
+        ax.set_ylim(sqrtq4Rmin,sqrtq4Rmax)
+        ax.set_xlabel("q (A-1)", fontsize="small")
+        ax.set_ylabel("sqrt_q4R", fontsize="small")
+        ax.set_title("fig.8: sqrt q4R(q)", fontsize="small")
+
+        #figure 9
+        ax=axs[2,2]
+        ax.plot(self.z_nc, self.deltaRho_nc,'k*-',ms=1,label=("nc"))
+        ax.plot(self.z, self.deltaRho,'bo-',ms=1, label=("ph."))
+        ax.plot(self.z_bl, self.deltaRho_bl_s,'ro-',ms=1, label=("ph. + bl"))
+        ax.set_xlim(zmin,zmax)
+        ax.set_ylim(rhomin,rhomax)
+        ax.set_xlabel("z (A)", fontsize="small")
+        ax.set_ylabel("deltaRho (e-/A3)", fontsize="small")
+        ax.set_title("fig.9: Electron density profile", fontsize="small")
+
+        for ax in axs.flatten():
+            ax.legend(fontsize="small")
+            ax.grid()
+
+        fig.suptitle(self.sampleName)
+        fig.tight_layout()
+        plt.savefig(filename, dpi=dpi)
+        plt.close(fig)
+
+            
+
+
 def parse_scantitle(scan_title):
     scan_args = scan_title.split(' ')
     scan_elements = {}
