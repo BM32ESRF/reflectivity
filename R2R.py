@@ -258,31 +258,12 @@ class Sample():
         max_peak_idx = np.argmax(smoothed_y_bl[self.peaks[:len(self.peaks)//2+1]]) #find the index of the peak with high amplitude
         sqrt_y_bl=np.sqrt(np.copy(y_bl))
         sqrt_smoothed_y_bl=np.sqrt(np.copy(smoothed_y_bl))
-        #Invert the sign of sqrt_y_bl
-        if len(self.minima) >= 2:
-            # For the minima on the left side of the max peak
-            invert = True
-            for i in range(max_peak_idx-1,-1,-1):
-                if i != 0:
-                    start_idx = self.minima[i-1]
-                else:
-                    start_idx = self.minima[i]
-                end_idx = self.minima[i]
-                if invert:
-                    sqrt_y[start_idx:end_idx] *= -1
-                    sqrt_y_bl[start_idx:end_idx] *= -1
-                    sqrt_smoothed_y_bl[start_idx:end_idx] *= -1
-                invert = not invert 
-            # For the minima on the right side of the max peak
-            invert2 = True
-            for i in range(max_peak_idx,len(self.minima)-1):
-                start_idx = self.minima[i]
-                end_idx = self.minima[i+1]
-                if invert2:
-                    sqrt_y[start_idx:end_idx] *= -1
-                    sqrt_y_bl[start_idx:end_idx] *= -1
-                    sqrt_smoothed_y_bl[start_idx:end_idx] *= -1
-                invert2 = not invert2 
+
+        # sign flipping after each minima
+        for idx in self.minima:
+            sqrt_y[idx:] *= -1
+            sqrt_y_bl[idx:] *= -1
+            sqrt_smoothed_y_bl[idx:] *= -1
         return sqrt_y,sqrt_y_bl,sqrt_smoothed_y_bl
         
     def set_no_background(self):
