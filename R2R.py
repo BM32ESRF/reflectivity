@@ -9,7 +9,11 @@ try:
 except ImportError:
     pass
 
-from scipy.signal import find_peaks,savgol_filter
+
+from scipy.signal import savgol_filter
+from scipy.signal import find_peaks as fp
+#from skimage.restoration import rolling_ball 
+
 from numpy import rad2deg as deg
 from numpy import deg2rad as rad
 import os
@@ -28,10 +32,15 @@ class Sample():
                  directBeamAmplitude=None, beamSize=0.05, tthOffset=0,
                  zrange=100, qmax=None,
                  tthmin=0.05, tthmin_bg=0.1,
-                 qvaluesRangesToRemove = [],peak_distance=None,peak_prominence=None,
-                 baseline_type="pchip"):
+                 qvaluesRangesToRemove = [],
+                 peak_finding_method = "scipy",
+                 peak_distance=None,peak_prominence=None,
+                 baseline_type="pchip",
+                 peak_distance_scipy=30,
+                 peak_prominence_scipy=1E-10):
         self.sampleName = sampleName
         self.datafilePathXRR = datafilePathXRR
+        self.basefilename = os.path.split(datafilePathXRR)[-1].split(".h5")[0]
         ##test
         self.scanNbrXRR = scanNbrXRR
         self.scanNbrBG = scanNbrBG
@@ -53,6 +62,9 @@ class Sample():
         self.peaks = [] 
         self.minima = []
         self.baseline_type = baseline_type
+        self.peak_finding_method = peak_finding_method
+        self.peak_distance_scipy = peak_distance_scipy
+        self.peak_prominence_scipy = peak_prominence_scipy
         self.qvaluesRangesToRemove  = qvaluesRangesToRemove
         if datafilePathBG == None:
             self.datafilePathBG = datafilePathXRR
@@ -129,6 +141,7 @@ class Sample():
         #window_size must be odd
         if window_size%2 == 0:
             window_size +=1
+        #smoothed_y = savgol_filter(y, window_size*2+1, poly_order)
         smoothed_y = savgol_filter(y, window_size, poly_order)
         return smoothed_y
 
@@ -195,31 +208,58 @@ class Sample():
         self.minima=minima
     
 
+    def find_min2(self,y,period,prominence,peaks):
+        p,_ = fp(-y, distance=4, prominence=1E-10)
+        self.minima=p
+    
+
+    #def find_min_scipy(self, y):
+    #    # first pass, find the most obvious minima
+    #    p,_ = fp(-y, distance=self.peak_distance_scipy, prominence=self.peak_prominence_scipy)
+    #    # remove the background with a rolling ball of radius = position of first peak
+    #    radius = p[0]
+    #    intensity_scale_factor = radius/y.max()
+    #    bg = rolling_ball(y*intensity_scale_factor, radius=radius)/intensity_scale_factor
+    #    # second pass, find the minima with the background removed
+    #    if len(p)>1 :
+    #        p2,_ = fp(-(y-bg), distance=(p[1]-p[0])*.75)
+    #    else:
+    #        p2,_ = fp(-(y-bg), distance=p[1]*.75)
+    #    self.minima = p2
+
+
+
     def invert_bl(self,y):
         ### enter y, return sqrt_y,sqrt_y_bl,sqrt_smoothed_y_bl
         sqrt_y=np.sqrt(y)
         #smooth the curve
-        smoothed_y=self.smooth(y,win_size=None)
+        smoothed_y=sqrt_y #self.smooth(y,win_size=None)
         self.smoothed_Rq4=smoothed_y
 
+        if 0:#self.peak_finding_method == "scipy":
+            #print("here")
+            #self.find_min_scipy(smoothed_y)
+            pass
+        else:
         #define period and prominence
-        max_idx = np.argmax(y[:len(y)//2+1])
-        prominence = y[max_idx]-np.min(y)
-        self.prominence = prominence
-        min_next_to_max = 0
-        for i in range(max_idx,len(y)-1):
-            if y[i]<y[i+1] and y[i]<y[i-1] and y[max_idx]-y[i]>=0.9*prominence:
-                min_next_to_max=i
-                break
-        self.max_idx=max_idx
-        self.min_next_to_max=min_next_to_max
-        #Initialize period
-        period=int(2*(min_next_to_max-max_idx))
-        self.period = period
-        #find peaks and minima 
-        self.find_peaks(smoothed_y,period=period,prominence=prominence)
-        #self.minima=self.find_peaks(-smoothed_y,period=period,prominence=prominence)
-        self.find_min(smoothed_y,period=period,prominence=prominence,peaks=self.peaks)
+            max_idx = np.argmax(y[:len(y)//2+1])
+            prominence = y[max_idx]-np.min(y)
+            self.prominence = prominence
+            min_next_to_max = 0
+            for i in range(max_idx,len(y)-1):
+                if y[i]<y[i+1] and y[i]<y[i-1] and y[max_idx]-y[i]>=0.9*prominence:
+                    min_next_to_max=i
+                    break
+            self.max_idx=max_idx
+            self.min_next_to_max=min_next_to_max
+            #Initialize period
+            period=int(2*(min_next_to_max-max_idx))
+            self.period = period
+            #find peaks and minima 
+            self.find_peaks(smoothed_y,period=period,prominence=prominence)
+            #self.minima=self.find_peaks(-smoothed_y,period=period,prominence=prominence)
+            #self.find_min(smoothed_y,period=period,prominence=prominence,peaks=self.peaks)
+            self.find_min2(smoothed_y,period=period,prominence=prominence,peaks=self.peaks)
         
         # Create an interpolation function to draw the baseline
         if self.baseline_type == "linear":
@@ -255,7 +295,6 @@ class Sample():
         self.Rq4_bl=y_bl
         smoothed_y_bl = np.abs(smoothed_y - self.baseline)
         self.smoothed_Rq4_bl=smoothed_y_bl
-        max_peak_idx = np.argmax(smoothed_y_bl[self.peaks[:len(self.peaks)//2+1]]) #find the index of the peak with high amplitude
         sqrt_y_bl=np.sqrt(np.copy(y_bl))
         sqrt_smoothed_y_bl=np.sqrt(np.copy(smoothed_y_bl))
 
@@ -723,6 +762,8 @@ class Sample():
         ax.set_xlabel("q (A-1)")
         ax.set_ylabel("q4R ")
         ax.set_title("fig.6: q4R(q) (raw)")
+        ax.hlines(0, *ax.get_xlim(),colors="k")
+        ax.set_xlim( *ax.get_xlim())
         plt.show()
 
         #figure 7
@@ -730,13 +771,16 @@ class Sample():
         ax.plot(self.qc, self.Rc*(self.qc**4),'k', label=("q4R (R>0) (raw)"))
         ax.plot(self.q,self.Rq4_bl,'b',label=("q4R_bl"))
         ax.plot(self.q,self.smoothed_Rq4_bl,'r',label=("q4R_bl_s"))
-        ax.plot(self.q[self.minima],self.smoothed_Rq4[self.minima],'ko', markersize=4,label=("minima"))
+        ax.plot(self.q[self.minima],self.smoothed_Rq4[self.minima],'gD', markersize=4,label=("minima"))
         ax.plot(self.q,self.baseline,'ko-', markersize=1,lw=1,label=("baseline"))
         plt.legend()
         ax.set_xlabel("q (A-1)")
         ax.set_ylabel("q4R ")
         ax.set_title("fig.7: q4R(q)")
+        ax.hlines(0, *ax.get_xlim(),colors="k")
+        ax.set_xlim( *ax.get_xlim())
         plt.show()
+        
         #figure 8
         fig,ax = plt.subplots(figsize=figsize)
         ax.plot(self.q, np.sqrt(self.R*self.q**4), 'k',label=("sqrt q4R_nc"))
@@ -746,7 +790,10 @@ class Sample():
         ax.set_xlabel("q (A-1)")
         ax.set_ylabel("sqrt_q4R")
         ax.set_title("fig.8: sqrt q4R(q)")
+        ax.hlines(0, *ax.get_xlim(),colors="k")
+        ax.set_xlim( *ax.get_xlim())
         plt.show()
+        
         #figure 9
         fig,ax = plt.subplots(figsize=figsize)
         ax.plot(self.z_nc, self.deltaRho_nc,'k*-',ms=1,label=("EDP_nc"))
@@ -761,11 +808,19 @@ class Sample():
 
 
     def save_plot_analysis(self, filename, figsize = (11,8), dpi = 150,
+                           tthmin = -.25, tthmax = 4,
+                           Irawmin = 1, Irawmax = 2E10,
+                           Imonmin = 1E-5, Imonmax = 2E5,
+                           Inormmin = 1E-10, Inormmax = 2,
                            qmin = 0, qmax = 0.9, 
-                           q4Rmin = -1E-9, q4Rmax = 5E-8, 
-                           sqrtq4Rmin = -0.00015, sqrtq4Rmax = 0.00025, 
-                           zmin = -40, zmax = 40, 
-                           rhomin = -.5, rhomax = 0.03):
+                           Rmin = 1E-10, Rmax = 1,
+                           q4Rmin = -1E-9, q4Rmax = 6E-8, 
+                           sqrtq4Rmin = -0.00025, sqrtq4Rmax = 0.00025, 
+                           rhomin = -.7, rhomax = 0.05):
+        
+        zmin = -self.zrange/2
+        zmax = self.zrange/2
+
         plt.ioff()
         fig,axs = plt.subplots(3, 3, figsize=figsize)
         #figure 1 
@@ -773,6 +828,8 @@ class Sample():
         ax.plot(self.tth, self.det, label=("XRR"))
         ax.plot(self.tth_bg, self.det_bg, label=("BG"))
         ax.set_yscale('log')
+        ax.set_xlim(tthmin,tthmax)
+        ax.set_ylim(Irawmin,Irawmax)
         ax.set_xlabel("tth (deg)", fontsize="small")
         ax.set_ylabel("det (arb. unit)", fontsize="small")
         ax.set_title("fig.1: raw data", fontsize="small")
@@ -782,6 +839,8 @@ class Sample():
         ax.plot(self.tth, self.detm, label=("XRR"))
         ax.plot(self.tth_bg, self.detm_bg, label=("BG"))
         ax.set_yscale('log')
+        ax.set_xlim(tthmin,tthmax)
+        ax.set_ylim(Imonmin,Imonmax)
         ax.set_xlabel("tth (deg)", fontsize="small")
         ax.set_ylabel("det/mon (arb. unit)", fontsize="small")
         ax.set_title("fig.2: normalized to monitor", fontsize="small")
@@ -791,6 +850,8 @@ class Sample():
         ax.plot(self.tthc, self.detmn, label=("XRR"))
         ax.plot(self.tthc_bg, self.detmn_bg, label=("BG"))
         ax.set_yscale('log')
+        ax.set_xlim(tthmin,tthmax)
+        ax.set_ylim(Inormmin,Inormmax)
         ax.set_xlabel("tth (deg)", fontsize="small")
         ax.set_ylabel("det/mon/db (arb. unit)", fontsize="small")
         ax.set_title("fig.3: normalized to direct beam", fontsize="small")
@@ -801,6 +862,8 @@ class Sample():
         ax.plot(self.tthc, self.detmnp, label=("XRR"))
         ax.plot(self.tthc_bg, self.detmnp_bg, label=("BG"))
         ax.set_yscale('log')
+        ax.set_xlim(tthmin,tthmax)
+        ax.set_ylim(Inormmin,Inormmax)
         ax.set_xlabel("tth (deg)", fontsize="small")
         ax.set_ylabel("det/mon/db/fpc (arb. unit)", fontsize="small")
         ax.plot(self.tthcr, self.detmnpr, label=("XRR (out of db)"))
@@ -816,6 +879,7 @@ class Sample():
         ax.plot(self.q, self.R, label=("R"))
         ax.plot(self.qc, self.Rc, label=("R>0"))
         ax.set_xlim(qmin,qmax)
+        ax.set_ylim(Rmin,Rmax)
         ax.set_yscale('log')
         ax.set_xlabel("q (A-1)", fontsize="small")
         ax.set_ylabel("R ", fontsize="small")
@@ -826,47 +890,51 @@ class Sample():
         ax.plot(self.qraw, self.Rraw*(self.qraw**4), label=("raw"))
         ax.plot(self.qc, self.Rc*(self.qc**4), label=("R>0"))
         ax.set_xlim(qmin,qmax)
+        ax.set_ylim(q4Rmin,q4Rmax)
         ax.set_xlabel("q (A-1)", fontsize="small")
         ax.set_ylabel("q4R ", fontsize="small")
         ax.set_title("fig.6: q4R(q) (raw)", fontsize="small")
 
         #figure 7
         ax=axs[0,2]
-        ax.plot(self.qc, self.Rc*(self.qc**4),'k', label=("q4R (R>0)"))
-        ax.plot(self.q,self.Rq4_bl,'b',label=("bl"))
-        ax.plot(self.q,self.smoothed_Rq4_bl,'r',label=("bl+s"))
-        ax.plot(self.q[self.minima],self.smoothed_Rq4[self.minima],'ko', markersize=4,label=("minima"))
-        ax.plot(self.q,self.baseline,'ko-', markersize=1,lw=1,label=("baseline"))
+        ax.plot(self.qc, self.Rc*(self.qc**4),'k')
+#        ax.plot(self.qc, self.Rc*(self.qc**4),'k', label=("q4R (R>0)"))
+        #ax.plot(self.q,self.Rq4_bl,'b',label=("bl"))
+        #ax.plot(self.q,self.smoothed_Rq4_bl,'r',label=("bl+s"))
+        #ax.plot(self.q[self.minima],self.smoothed_Rq4[self.minima],'go', markersize=4,label=("minima"))
+        #ax.plot(self.q,self.baseline,'go-', markersize=1,lw=1,label=("baseline"))
         ax.set_xlim(qmin,qmax)
         ax.set_ylim(q4Rmin,q4Rmax)
         ax.set_xlabel("q (A-1)", fontsize="small")
         ax.set_ylabel("q4R ", fontsize="small")
-        ax.set_title("fig.7: q4R(q)", fontsize="small")
+#        ax.set_title("fig.7: q4R(q)", fontsize="small")
 
         #figure 8
         ax=axs[1,2]
-        ax.plot(self.q, np.sqrt(self.R*self.q**4), 'k',label=("nc"))
-        ax.plot(self.q,self.sqrtRq4,'b',label=("ph."))
-        ax.plot(self.q,self.sqrt_smoothed_Rq4_bl,'r',label=("ph.+bl"))
+        #ax.plot(self.q, np.sqrt(self.R*self.q**4), 'k',label=("nc"))
+        #ax.plot(self.q,self.sqrtRq4,'b',label=("ph."))
+        #ax.plot(self.q,self.sqrt_smoothed_Rq4_bl,'r',label=("ph.+bl"))
+        ax.plot(self.q,self.sqrt_smoothed_Rq4_bl,'k')
         ax.set_xlim(qmin,qmax)
         ax.set_ylim(sqrtq4Rmin,sqrtq4Rmax)
         ax.set_xlabel("q (A-1)", fontsize="small")
-        ax.set_ylabel("sqrt_q4R", fontsize="small")
-        ax.set_title("fig.8: sqrt q4R(q)", fontsize="small")
+        ax.set_ylabel(r"$\sqrt{q4R}$", fontsize="small")
+#        ax.set_title("fig.8: sqrt q4R(q)", fontsize="small")
 
         #figure 9
         ax=axs[2,2]
-        ax.plot(self.z_nc, self.deltaRho_nc,'k*-',ms=1,label=("nc"))
-        ax.plot(self.z, self.deltaRho,'bo-',ms=1, label=("ph."))
-        ax.plot(self.z_bl, self.deltaRho_bl_s,'ro-',ms=1, label=("ph. + bl"))
+#        ax.plot(self.z_nc, self.deltaRho_nc,'k*-',ms=1,label=("nc"))
+#        ax.plot(self.z, self.deltaRho,'bo-',ms=1, label=("ph."))
+#        ax.plot(self.z_bl, self.deltaRho_bl_s,'ro-',ms=1, label=("ph. + bl"))
+        ax.plot(self.z_bl, self.deltaRho_bl_s,'k',ms=1)
         ax.set_xlim(zmin,zmax)
         ax.set_ylim(rhomin,rhomax)
         ax.set_xlabel("z (A)", fontsize="small")
         ax.set_ylabel("deltaRho (e-/A3)", fontsize="small")
-        ax.set_title("fig.9: Electron density profile", fontsize="small")
+#        ax.set_title("fig.9: Electron density profile", fontsize="small")
 
         for ax in axs.flatten():
-            ax.legend(fontsize="small")
+          #  ax.legend(fontsize="small")
             ax.grid()
 
         fig.suptitle(self.sampleName)
@@ -915,36 +983,40 @@ def build_dictScan_from_master_h5(h5FileExp, filters = ["measurement",], verbose
             do_process = np.array([(keyword in k) for keyword in filters]).all()
             if do_process:
                 if verbose: print("process ", k)
-                s=f[k]
-                scan_title = s['title'][()].decode()
-                if verbose : print(scan_title)
-                #check if it is a XRR scan
-                if isXRR_from_scantitle(scan_title):
-                    prefix = "_".join(k.split("_")[:-1])
-                    scan_num = k.split("_")[-1].split(".")[0]
-                    if verbose : print("found xrr", prefix, scan_num)
-                    dictScan={}
-                    list_dictScan.append(dictScan)
-                    dictScan['item'] = item
-                    item=item+1
-                    dictScan['h5filePath']=f[k].file.filename
-                    dictScan['sampleName']=os.path.split(os.path.split(os.path.split(dictScan['h5filePath'])[0])[0])[1]
-                    dictScan['title']=s['title'][()]
-                    dictScan['scanNbrXRR']=int(scan_num.split('.')[0])
+                try:
+                    s=f[k]
+                    scan_title = s['title'][()].decode()
+                    if verbose : print(scan_title)
+                    #check if it is a XRR scan
+                    if isXRR_from_scantitle(scan_title):
+                        prefix = "_".join(k.split("_")[:-1])
+                        scan_num = k.split("_")[-1].split(".")[0]
+                        if verbose : print("found xrr", prefix, scan_num)
+                        dictScan={}
+                        list_dictScan.append(dictScan)
+                        dictScan['item'] = item
+                        item=item+1
+                        dictScan['h5filePath']=f[k].file.filename
+                        dictScan['sampleName']=os.path.split(os.path.split(os.path.split(dictScan['h5filePath'])[0])[0])[1]
+                        dictScan['title']=s['title'][()]
+                        dictScan['scanNbrXRR']=int(scan_num.split('.')[0])
 
-                    #check if it has a following background (BG) scan
-                    #if the type of f[f'{scan_numBG}.1']['title'][()] is bytes
-                    dictScan['scanNbrBG']= None
-                    scanBG_num=int(scan_num)+1
-                    k_bg = f"{prefix}_{scanBG_num}.1"
-                    if k_bg in keys:
-                        if verbose: print("bg name ", k_bg)
-                        scanBG_title = f[k_bg]['title'][()].decode()
-                        if verbose: print("scanBG_title ", scanBG_title)
-                        if isBG_from_scantitle(scanBG_title):
-                            if verbose : print("found xrr BG")
-                            dictScan['scanNbrBG']=scanBG_num
-                            dictScan['title_BG']=scanBG_title
+                        #check if it has a following background (BG) scan
+                        #if the type of f[f'{scan_numBG}.1']['title'][()] is bytes
+                        dictScan['scanNbrBG']= None
+                        scanBG_num=int(scan_num)+1
+                        k_bg = f"{prefix}_{scanBG_num}.1"
+                        if k_bg in keys:
+                            if verbose: print("bg name ", k_bg)
+                            scanBG_title = f[k_bg]['title'][()].decode()
+                            if verbose: print("scanBG_title ", scanBG_title)
+                            if isBG_from_scantitle(scanBG_title):
+                                if verbose : print("found xrr BG")
+                                dictScan['scanNbrBG']=scanBG_num
+                                dictScan['title_BG']=scanBG_title
+                except Exception as e:
+                    print(e)
+                    pass
                         
     return list_dictScan
 
